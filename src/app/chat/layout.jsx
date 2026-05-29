@@ -247,9 +247,7 @@ function Sidebar({ chats, loading, indexError, user, profile, logOut, sidebarOpe
         <div className="flex items-center justify-between px-4 py-3 border-b border-border1">
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden mr-2 text-textS hover:text-textP"><X size={18} /></button>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-accent/20 border border-accent/30 flex items-center justify-center">
-              <Shield size={14} className="text-accentL" />
-            </div>
+            <img src="/pnb-logo.png" alt="P&B" className="w-8 h-8 rounded-xl object-contain" />
             <span className="font-bold text-textP tracking-tight">P&amp;B</span>
           </div>
           <button onClick={() => setShowNewChat(true)}
@@ -532,9 +530,7 @@ export default function ChatLayout({ children }) {
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-accent/20 border border-accent/30 flex items-center justify-center">
-              <Shield size={11} className="text-accentL" />
-            </div>
+            <img src="/pnb-logo.png" alt="P&B" className="w-6 h-6 rounded-lg object-contain" />
             <span className="font-bold text-textP text-sm">P&amp;B</span>
           </div>
         </div>
