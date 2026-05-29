@@ -483,17 +483,16 @@ export default function ChatLayout({ children }) {
     );
   }
 
-  // Unread listener — per-chat snapshot, only for chats this user belongs to
-  // Recomputes whenever the chats list changes (new chat added, etc.)
+  // Unread listener — watch all unread messages, filter in JS to avoid index requirements
   useEffect(() => {
     if (!user?.uid || chats.length === 0) return;
 
     const myChatIds = new Set(chats.map(c => c.id));
 
+    // Only filter by read=false — no != operator avoids composite index requirement
     const q = query(
       collection(db, 'messages'),
-      where('read',     '==', false),
-      where('senderId', '!=', user.uid),
+      where('read', '==', false),
     );
 
     const unsub = onSnapshot(q, snap => {
@@ -501,14 +500,21 @@ export default function ChatLayout({ children }) {
         const counts = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          // Only count if it's one of THIS user's chats
-          if (data.chatId && myChatIds.has(data.chatId)) {
+          // Filter in JS: only other people's messages in MY chats
+          if (
+            data.chatId &&
+            myChatIds.has(data.chatId) &&
+            data.senderId &&
+            data.senderId !== user.uid
+          ) {
             counts[data.chatId] = (counts[data.chatId] || 0) + 1;
           }
         });
         setUnreadCounts(counts);
       });
-    }, () => {});
+    }, err => {
+      console.warn('Unread listener error:', err.message);
+    });
 
     return unsub;
   }, [user?.uid, chats]); // eslint-disable-line

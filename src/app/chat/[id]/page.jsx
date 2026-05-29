@@ -57,6 +57,12 @@ function MessageText({ text }) {
 }
 
 // ── Reaction bar ──────────────────────────────────────────────────────────────
+function ReactionEmoji({ emoji }) {
+  const m = typeof emoji === 'string' && emoji.match(/^\[emoji:([^:]+):(.+)\]$/);
+  if (m) return <img src={m[2]} alt={m[1]} style={{ width: 14, height: 14, objectFit: 'contain', display: 'inline-block', verticalAlign: 'middle' }} />;
+  return <span>{emoji}</span>;
+}
+
 function ReactionBar({ reactions = {}, myUid, onReact }) {
   const entries = Object.entries(reactions).filter(([, u]) => u.length > 0);
   if (!entries.length) return null;
@@ -68,7 +74,7 @@ function ReactionBar({ reactions = {}, myUid, onReact }) {
             ${uids.includes(myUid)
               ? 'bg-accent/20 border-accent/40 text-accentL'
               : 'bg-surface2 border-border1 text-textS hover:bg-surface3'}`}>
-          {emoji} <span className="font-semibold">{uids.length}</span>
+          <ReactionEmoji emoji={emoji} /> <span className="font-semibold">{uids.length}</span>
         </button>
       ))}
     </div>
@@ -192,9 +198,7 @@ function Bubble({ msg, isMe, myUid, onReact, onReply, myAvatar }) {
               <EmojiPicker
                 onSelect={emoji => {
                   const str = typeof emoji === 'string' ? emoji : (emoji?.native || emoji?.emoji || String(emoji));
-                  if (str && !str.startsWith('[emoji:')) {
-                    onReact(msg.id, str);
-                  }
+                  if (str) onReact(msg.id, str);
                   setShowCustomReact(false);
                   setShowActions(false);
                 }}
