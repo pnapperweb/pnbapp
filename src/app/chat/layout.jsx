@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import {
   collection, query, where, onSnapshot,
-  orderBy, addDoc, serverTimestamp, getDocs,
+  orderBy, addDoc, serverTimestamp, getDocs, getDoc,
   deleteDoc, doc, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
@@ -483,16 +483,17 @@ export default function ChatLayout({ children }) {
     );
   }
 
-  // Single unread listener — one query for all unread messages, grouped by chatId
-  // Uses startTransition to avoid render thrashing from rapid Firestore updates
+  // Unread listener — per-chat snapshot, only for chats this user belongs to
+  // Recomputes whenever the chats list changes (new chat added, etc.)
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || chats.length === 0) return;
 
-    // Query ALL unread messages for this user's chats in one snapshot
-    // Avoids N separate listeners (one per chat) which cause render thrashing
+    const myChatIds = new Set(chats.map(c => c.id));
+
     const q = query(
       collection(db, 'messages'),
-      where('read', '==', false),
+      where('read',     '==', false),
+      where('senderId', '!=', user.uid),
     );
 
     const unsub = onSnapshot(q, snap => {
@@ -500,17 +501,17 @@ export default function ChatLayout({ children }) {
         const counts = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          // Only count messages in chats this user is part of, sent by others
-          if (data.senderId && data.senderId !== user.uid && data.chatId) {
+          // Only count if it's one of THIS user's chats
+          if (data.chatId && myChatIds.has(data.chatId)) {
             counts[data.chatId] = (counts[data.chatId] || 0) + 1;
           }
         });
         setUnreadCounts(counts);
       });
-    }, () => {}); // ignore permission errors silently
+    }, () => {});
 
     return unsub;
-  }, [user?.uid]); // eslint-disable-line
+  }, [user?.uid, chats]); // eslint-disable-line
 
   return (
     <div className="flex h-screen bg-bg0 overflow-hidden">

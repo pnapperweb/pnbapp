@@ -98,7 +98,8 @@ function ReplyQuote({ replyTo, isMe }) {
 
 // ── Bubble ────────────────────────────────────────────────────────────────────
 function Bubble({ msg, isMe, myUid, onReact, onReply, myAvatar }) {
-  const [showActions, setShowActions] = useState(false);
+  const [showActions, setShowActions]       = useState(false);
+  const [showCustomReact, setShowCustomReact] = useState(false);
   const time = msg.createdAt?.toDate ? formatTime(msg.createdAt.toDate()) : '';
 
   const bubbleContent = () => {
@@ -170,13 +171,35 @@ function Bubble({ msg, isMe, myUid, onReact, onReply, myAvatar }) {
             😊
           </button>
           {showActions && (
-            <div className={`absolute bottom-9 ${isMe ? 'right-0' : 'left-0'} flex gap-1 bg-bg2 border border-border2 rounded-2xl px-2 py-1.5 shadow-xl z-20 whitespace-nowrap`}>
+            <div className={`absolute bottom-9 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1 bg-bg2 border border-border2 rounded-2xl px-2 py-1.5 shadow-xl z-20 whitespace-nowrap`}>
               {QUICK_REACTIONS.map(e => (
                 <button key={e} onClick={() => { onReact(msg.id, e); setShowActions(false); }}
                   className="text-xl hover:scale-125 transition active:scale-95">
                   {e}
                 </button>
               ))}
+              {/* Custom emoji button */}
+              <button
+                onClick={() => setShowCustomReact(v => !v)}
+                className="w-7 h-7 rounded-full bg-surface3 hover:bg-surface2 flex items-center justify-center text-textT hover:text-textP transition text-base">
+                ➕
+              </button>
+            </div>
+          )}
+          {/* Custom emoji picker for reactions */}
+          {showCustomReact && (
+            <div className={`absolute bottom-9 ${isMe ? 'right-0' : 'left-0'} z-30`}>
+              <EmojiPicker
+                onSelect={emoji => {
+                  const str = typeof emoji === 'string' ? emoji : (emoji?.native || emoji?.emoji || String(emoji));
+                  if (str && !str.startsWith('[emoji:')) {
+                    onReact(msg.id, str);
+                  }
+                  setShowCustomReact(false);
+                  setShowActions(false);
+                }}
+                onClose={() => setShowCustomReact(false)}
+              />
             </div>
           )}
         </div>
@@ -267,10 +290,17 @@ export default function ChatPage({ params }) {
   const [eiDismissed,    setEiDismissed]    = useState(null); // last msgId dismissed
   const lastReceivedIdRef = useRef(null);
 
-  const bottomRef    = useRef(null);
-  const inputRef     = useRef(null);
-  const fileInputRef = useRef(null);
-  const prevCountRef = useRef(0);
+  const bottomRef        = useRef(null);
+  const inputRef         = useRef(null);
+  const fileInputRef     = useRef(null);
+  const prevCountRef     = useRef(0);
+  const initialScrollRef = useRef(false); // has first-load scroll happened?
+
+  // Reset scroll flag when chat changes
+  useEffect(() => {
+    initialScrollRef.current = false;
+    prevCountRef.current = 0;
+  }, [id]);
 
   // Load chat metadata
   useEffect(() => {
@@ -306,7 +336,6 @@ export default function ChatPage({ params }) {
       prevCountRef.current = msgs.length;
       setMessages(msgs);
       setLoading(false);
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
 
       // Mark unread incoming messages as read
       if (user?.uid) {
@@ -346,6 +375,23 @@ export default function ChatPage({ params }) {
       }
     }).catch(() => {});
   }, [messages.length]); // eslint-disable-line
+
+  // ── Scroll to bottom ──────────────────────────────────────────────────────
+  // On first load: instant scroll (no animation, avoids the "flash mid-screen" bug)
+  // On new message: smooth scroll
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const el = bottomRef.current;
+    if (!el) return;
+    if (!initialScrollRef.current) {
+      // First render — jump instantly so user never sees mid-scroll
+      el.scrollIntoView({ behavior: 'instant' });
+      initialScrollRef.current = true;
+    } else if (messages.length > prevCountRef.current) {
+      // New message arrived — smooth scroll
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   // ── EI suggestions — only for @paulnapper ─────────────────────────────
   // Derive the last-received message ID so the effect only fires on real changes
