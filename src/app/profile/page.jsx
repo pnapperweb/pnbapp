@@ -222,33 +222,35 @@ export default function ProfilePage() {
 
           {error && <p className="text-danger text-sm px-1">{error}</p>}
 
-          {/* pnb-bot toggle */}
-          <div className="border-t border-border1 pt-5 mt-1">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center flex-shrink-0">
-                  <Bot size={16} className="text-white" />
+          {/* pnb-bot toggle — paulnapper only */}
+          {profile?.username === 'paulnapper' && (
+            <div className="border-t border-border1 pt-5 mt-1">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center flex-shrink-0">
+                    <Bot size={16} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-textP flex items-center gap-1.5">
+                      pnb-bot <span className="text-[10px] px-1.5 py-0.5 bg-accent/15 text-accentL border border-accent/20 rounded-full">AI</span>
+                    </p>
+                    <p className="text-xs text-textT">Show AI assistant in your chat list</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-textP flex items-center gap-1.5">
-                    pnb-bot <span className="text-[10px] px-1.5 py-0.5 bg-accent/15 text-accentL border border-accent/20 rounded-full">AI</span>
-                  </p>
-                  <p className="text-xs text-textT">Show AI assistant in your chat list</p>
-                </div>
+                {/* Toggle switch */}
+                <button
+                  onClick={() => setBotEnabled(v => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${botEnabled ? 'bg-accent' : 'bg-surface3'}`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${botEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
               </div>
-              {/* Toggle switch */}
-              <button
-                onClick={() => setBotEnabled(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${botEnabled ? 'bg-accent' : 'bg-surface3'}`}>
-                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${botEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
-              </button>
+              {botEnabled && (
+                <p className="mt-2 text-xs text-accentL flex items-center gap-1.5 pl-12">
+                  <Sparkles size={10} /> pnb-bot will appear at the top of your chat list
+                </p>
+              )}
             </div>
-            {botEnabled && (
-              <p className="mt-2 text-xs text-accentL flex items-center gap-1.5 pl-12">
-                <Sparkles size={10} /> pnb-bot will appear at the top of your chat list
-              </p>
-            )}
-          </div>
+          )}
 
           <button onClick={handleSave} disabled={saving || processing || !displayName.trim()}
             className="w-full py-3 bg-accent hover:bg-accentD disabled:opacity-40 text-white font-semibold rounded-xl transition flex items-center justify-center gap-2">
