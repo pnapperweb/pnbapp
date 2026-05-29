@@ -16,7 +16,7 @@ import Avatar from '../../../components/Avatar';
 import { compressImage } from '../../../lib/webrtc';
 import { playMessageSound, playSentSound } from '../../../lib/sounds';
 import CallModal from '../../../components/CallModal';
-import EmojiPicker from '../../../components/EmojiPicker';
+import EmojiPicker, { JP, toJoyPixelsUrl } from '../../../components/EmojiPicker';
 import GifPicker from '../../../components/GifPicker';
 
 function formatTime(date) {
@@ -27,28 +27,46 @@ const QUICK_REACTIONS = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
 
 
 // ── MessageText ───────────────────────────────────────────────────────────────
-const URL_SPLIT = /(https?:\/\/[^\s<>"]+)/;  // no g flag — safe to reuse for split
+const URL_SPLIT    = /(https?:\/\/[^\s<>"]+)/;
+// Matches native emoji characters (basic + extended pictographic range)
+const EMOJI_SPLIT  = /((?:\p{Emoji_Presentation}|\p{Extended_Pictographic})(?:\u{FE0F}|\u{20E3}|[\u{1F3FB}-\u{1F3FF}]|\u{200D}(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}))*)/gu;
 
 function MessageText({ text }) {
+  // First split on custom image emoji tokens
   const parts = text.split(/(\[emoji:[^\]]+\])/g);
   return (
     <span>
       {parts.map((part, i) => {
+        // Custom image emoji
         const m = part.match(/^\[emoji:([^:]+):(.+)\]$/);
         if (m) return <img key={i} src={m[2]} alt={m[1]} title={m[1]}
           className="inline-block align-middle"
           style={{ width: 22, height: 22, objectFit: 'contain', borderRadius: 3, margin: '0 1px' }} />;
-        // Split on URLs — alternating [text, url, text, url, ...]
-        const segments = part.split(URL_SPLIT);
+
+        // Split URLs
+        const urlSegments = part.split(URL_SPLIT);
         return (
           <span key={i}>
-            {segments.map((seg, j) =>
-              /^https?:\/\//.test(seg)
-                ? <a key={j} href={seg} target="_blank" rel="noopener noreferrer"
-                    className="underline underline-offset-2 break-all hover:opacity-80 transition-opacity"
-                    onClick={e => e.stopPropagation()}>{seg}</a>
-                : <span key={j}>{seg}</span>
-            )}
+            {urlSegments.map((seg, j) => {
+              if (/^https?:\/\//.test(seg)) {
+                return <a key={j} href={seg} target="_blank" rel="noopener noreferrer"
+                  className="underline underline-offset-2 break-all hover:opacity-80 transition-opacity"
+                  onClick={e => e.stopPropagation()}>{seg}</a>;
+              }
+              // Split native emoji within text segments — render as JoyPixels
+              const emojiParts = seg.split(EMOJI_SPLIT);
+              return (
+                <span key={j}>
+                  {emojiParts.map((ep, k) =>
+                    EMOJI_SPLIT.test(ep)
+                      ? <img key={k} src={toJoyPixelsUrl(ep)} alt={ep}
+                          onError={e => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display=''); }}
+                          style={{ width: 20, height: 20, objectFit: 'contain', display: 'inline-block', verticalAlign: '-4px', margin: '0 1px' }} />
+                      : <span key={k}>{ep}</span>
+                  )}
+                </span>
+              );
+            })}
           </span>
         );
       })}
@@ -59,8 +77,9 @@ function MessageText({ text }) {
 // ── Reaction bar ──────────────────────────────────────────────────────────────
 function ReactionEmoji({ emoji }) {
   const m = typeof emoji === 'string' && emoji.match(/^\[emoji:([^:]+):(.+)\]$/);
-  if (m) return <img src={m[2]} alt={m[1]} style={{ width: 14, height: 14, objectFit: 'contain', display: 'inline-block', verticalAlign: 'middle' }} />;
-  return <span>{emoji}</span>;
+  if (m) return <img src={m[2]} alt={m[1]} style={{ width: 16, height: 16, objectFit: 'contain', display: 'inline-block', verticalAlign: 'middle' }} />;
+  // Standard emoji — render via JoyPixels
+  return <JP emoji={emoji} size={16} />;
 }
 
 function ReactionBar({ reactions = {}, reactionsDisplay = {}, myUid, onReact }) {
@@ -177,15 +196,15 @@ function Bubble({ msg, isMe, myUid, onReact, onReply, myAvatar }) {
         <div className="relative">
           <button
             onClick={() => setShowActions(a => !a)}
-            className="w-7 h-7 rounded-full bg-surface2 hover:bg-surface3 flex items-center justify-center text-sm transition">
-            😊
+            className="w-7 h-7 rounded-full bg-surface2 hover:bg-surface3 flex items-center justify-center transition p-1">
+            <JP emoji="😊" size={16} />
           </button>
           {showActions && (
             <div className={`absolute bottom-9 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1 bg-bg2 border border-border2 rounded-2xl px-2 py-1.5 shadow-xl z-20 whitespace-nowrap`}>
               {QUICK_REACTIONS.map(e => (
                 <button key={e} onClick={() => { onReact(msg.id, e); setShowActions(false); }}
-                  className="text-xl hover:scale-125 transition active:scale-95">
-                  {e}
+                  className="w-8 h-8 flex items-center justify-center hover:scale-125 transition active:scale-95 p-1">
+                  <JP emoji={e} size={22} />
                 </button>
               ))}
               {/* Custom emoji button */}

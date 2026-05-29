@@ -2,6 +2,38 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, Plus, Loader2, X } from 'lucide-react';
 
+// ── JoyPixels CDN helper ───────────────────────────────────────────────────────
+// Converts a native emoji character to its JoyPixels PNG URL.
+// Codepoints are joined with '-' for sequences (e.g. skin tones, ZWJ sequences).
+// Variation selector U+FE0F is stripped (JoyPixels doesn't use it in filenames).
+const JP_BASE = 'https://cdn.jsdelivr.net/npm/emoji-toolkit@8.0.0/extras/png/64';
+
+function toJoyPixelsUrl(emoji) {
+  const codepoints = [...emoji]
+    .map(c => c.codePointAt(0))
+    .filter(cp => cp !== 0xFE0F) // strip variation selector
+    .map(cp => cp.toString(16).toLowerCase())
+    .join('-');
+  return `${JP_BASE}/${codepoints}.png`;
+}
+
+// ── JoyPixels image component ─────────────────────────────────────────────────
+function JP({ emoji, size = 28 }) {
+  const [errored, setErrored] = useState(false);
+  if (errored) {
+    // Fallback to native glyph if CDN image missing
+    return <span style={{ fontSize: size * 0.75, lineHeight: 1 }}>{emoji}</span>;
+  }
+  return (
+    <img
+      src={toJoyPixelsUrl(emoji)}
+      alt={emoji}
+      onError={() => setErrored(true)}
+      style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
+    />
+  );
+}
+
 const BUILT_IN = {
   '😊 Smileys':    ['😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳'],
   '👍 Gestures':   ['👍','👎','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👋','🤚','🖐','✋','🖖','👏','🙌','🤲','🤝','🙏'],
@@ -10,21 +42,21 @@ const BUILT_IN = {
   '🔥 Popular':    ['🔥','💯','✅','❌','⚡','💥','🌈','🎵','🎶','💪','🚀','👀','💀','🤡','👻','💩'],
   '🐶 Animals':    ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🦄','🐔','🐧','🦋','🐝'],
   '🍕 Food':       ['🍕','🍔','🍟','🌭','🍿','🥓','🥚','🍳','🧇','🥞','🍞','🥐','🧀','🥗','🍜','🍣','🍱','🍩','🍪','🎂'],
-  '⚽ Sports':     ['⚽','🏀','🏈','⚾','🎾','🏐','🎱','🏓','🥊','⛸️','🏋️','🤸','🏊','🚴','🧗','🤺'],
+  '⚽ Sports':     ['⚽','🏀','🏈','⚾','🎾','🏐','🎱','🏓','🥊','🏋️','🤸','🏊','🚴'],
   '🌍 Travel':     ['🌍','🌎','🌏','🗺️','🧭','🏔️','⛰️','🌋','🏕️','🏖️','🏜️','🌊','🌅','🌆','🏙️','✈️','🚂','🚢'],
-  '💼 Objects':    ['💼','📱','💻','🖥️','⌨️','📷','📸','📹','🎥','📞','☎️','📺','📻','⏰','💡','🔦','🕯️','🔑','🗝️','🔒'],
+  '💼 Objects':    ['💼','📱','💻','🖥️','📷','📸','📹','🎥','📞','☎️','📺','📻','⏰','💡','🔦','🕯️','🔑','🗝️','🔒'],
 };
 
-const CUSTOM_KEY = 'pandb_custom_emojis_v2';
+const QUICK_REACTIONS_NATIVE = ['❤️','😂','😮','😢','👍','🔥'];
 
+const CUSTOM_KEY = 'pandb_custom_emojis_v2';
 function loadCustom() {
   try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); } catch { return []; }
 }
 function saveCustom(list) {
-  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch {}
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch {} 
 }
 
-// Convert file to base64 data URL — stored in localStorage, no Firebase Storage needed
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -39,8 +71,11 @@ function CustomEmojiImg({ emoji, size = 28 }) {
     return <img src={emoji.value} alt={emoji.name}
       style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4 }} />;
   }
-  return <span style={{ fontSize: size * 0.75 }}>{emoji.value}</span>;
+  // text emoji — render via JoyPixels
+  return <JP emoji={emoji.value} size={size} />;
 }
+
+export { toJoyPixelsUrl, JP };
 
 export default function EmojiPicker({ onSelect, onClose }) {
   const [category, setCategory]   = useState(Object.keys(BUILT_IN)[0]);
@@ -71,9 +106,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
     const updated = [item, ...custom].slice(0, 100);
     setCustom(updated);
     saveCustom(updated);
-    setNewText('');
-    setNewName('');
-    setAddMode(false);
+    setNewText(''); setNewName(''); setAddMode(false);
     setCategory('⭐ Custom');
   }
 
@@ -81,20 +114,15 @@ export default function EmojiPicker({ onSelect, onClose }) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) { setUploadErr('Please select an image file'); return; }
-    // Limit to 200KB to stay within localStorage limits
-    if (file.size > 200 * 1024) { setUploadErr('Image must be under 200KB for local storage'); return; }
-
-    setUploading(true);
-    setUploadErr('');
+    if (file.size > 200 * 1024) { setUploadErr('Image must be under 200KB'); return; }
+    setUploading(true); setUploadErr('');
     try {
       const dataUrl = await fileToDataUrl(file);
       const name    = newName.trim() || file.name.replace(/\.[^.]+$/, '');
       const item    = { name, type: 'image', value: dataUrl };
       const updated = [item, ...custom].slice(0, 50);
-      setCustom(updated);
-      saveCustom(updated);
-      setNewName('');
-      setAddMode(false);
+      setCustom(updated); saveCustom(updated);
+      setNewName(''); setAddMode(false);
       setCategory('⭐ Custom');
     } catch (err) {
       setUploadErr('Failed to load image: ' + err.message);
@@ -106,8 +134,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
 
   function removeCustom(index) {
     const updated = custom.filter((_, i) => i !== index);
-    setCustom(updated);
-    saveCustom(updated);
+    setCustom(updated); saveCustom(updated);
   }
 
   function handleSelect(emoji) {
@@ -116,7 +143,6 @@ export default function EmojiPicker({ onSelect, onClose }) {
     } else if (emoji.type === 'text') {
       onSelect(emoji.value);
     } else {
-      // Image emoji — send as token the bubble renderer understands
       onSelect(`[emoji:${emoji.name}:${emoji.value}]`);
     }
   }
@@ -135,7 +161,7 @@ export default function EmojiPicker({ onSelect, onClose }) {
     <div ref={ref}
       className="absolute bottom-full mb-2 left-0 w-80 bg-bg2 border border-border2 rounded-2xl shadow-2xl overflow-hidden z-50">
 
-      {/* Search + add button */}
+      {/* Search + add */}
       <div className="flex items-center gap-2 p-2 border-b border-border1">
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="Search emoji…" autoFocus
@@ -152,12 +178,9 @@ export default function EmojiPicker({ onSelect, onClose }) {
       {addMode && (
         <div className="p-3 border-b border-border1 bg-bg3/60 space-y-2">
           <p className="text-textT text-[10px] uppercase tracking-wider font-semibold">Add Custom Emoji</p>
-
           <input value={newName} onChange={e => setNewName(e.target.value)}
             placeholder="Name (e.g. party-blob)"
             className="w-full bg-bg3 border border-border1 rounded-lg px-2 py-1.5 text-sm text-textP placeholder-textT focus:outline-none focus:border-accent/50" />
-
-          {/* Paste text emoji */}
           <div className="flex gap-2">
             <input value={newText} onChange={e => setNewText(e.target.value)}
               placeholder="Paste any emoji 🎉"
@@ -168,8 +191,6 @@ export default function EmojiPicker({ onSelect, onClose }) {
               Add
             </button>
           </div>
-
-          {/* Upload image — stored as base64 in localStorage, no CORS */}
           <div>
             <input ref={fileRef} type="file" accept="image/png,image/gif,image/jpeg,image/webp"
               onChange={handleFileUpload} className="hidden" id="emoji-upload" />
@@ -180,16 +201,10 @@ export default function EmojiPicker({ onSelect, onClose }) {
                   : 'border-border2 hover:border-accent/50 hover:bg-accent/5 text-textS hover:text-accentL'}`}>
               {uploading
                 ? <><Loader2 size={13} className="animate-spin" /> Processing…</>
-                : <><Upload size={13} /> Upload image (PNG/GIF/JPG · max 200KB)</>
-              }
+                : <><Upload size={13} /> Upload image (PNG/GIF/JPG · max 200KB)</>}
             </label>
           </div>
-
-          {uploadErr && (
-            <p className="text-danger text-[11px] flex items-center gap-1">
-              <X size={10} /> {uploadErr}
-            </p>
-          )}
+          {uploadErr && <p className="text-danger text-[11px] flex items-center gap-1"><X size={10} /> {uploadErr}</p>}
           <p className="text-textT text-[10px]">Images are stored locally in your browser</p>
         </div>
       )}
@@ -199,9 +214,12 @@ export default function EmojiPicker({ onSelect, onClose }) {
         <div className="flex overflow-x-auto p-1 gap-1 border-b border-border1" style={{ scrollbarWidth: 'none' }}>
           {Object.keys(allCategories).map(cat => (
             <button key={cat} onClick={() => setCategory(cat)}
-              className={`flex-shrink-0 text-xs px-2 py-1 rounded-lg transition whitespace-nowrap
-                ${category === cat ? 'bg-accent/20 text-accentL' : 'text-textT hover:text-textP hover:bg-surface2'}`}>
-              {cat.split(' ')[0]}
+              className={`flex-shrink-0 px-1.5 py-1 rounded-lg transition
+                ${category === cat ? 'bg-accent/20' : 'hover:bg-surface2'}`}>
+              {/* Show category icon as JoyPixels image */}
+              {cat === '⭐ Custom'
+                ? <span className="text-sm">⭐</span>
+                : <JP emoji={cat.split(' ')[0]} size={20} />}
             </button>
           ))}
         </div>
@@ -225,8 +243,8 @@ export default function EmojiPicker({ onSelect, onClose }) {
           ))
           : displayed.map((emoji, i) => (
             <button key={i} onClick={() => handleSelect(emoji)}
-              className="w-8 h-8 flex items-center justify-center text-xl hover:bg-surface2 rounded-lg transition active:scale-90">
-              {emoji}
+              className="w-8 h-8 flex items-center justify-center hover:bg-surface2 rounded-lg transition active:scale-90 p-0.5">
+              <JP emoji={emoji} size={26} />
             </button>
           ))
         }
