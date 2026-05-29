@@ -483,13 +483,13 @@ export default function ChatLayout({ children }) {
     );
   }
 
-  // Unread listener — watch all unread messages, filter in JS to avoid index requirements
+  // Unread listener — stable subscription, re-subscribes only when user or chat list changes
+  const chatIdsKey = chats.map(c => c.id).sort().join(',');
   useEffect(() => {
-    if (!user?.uid || chats.length === 0) return;
+    if (!user?.uid || !chatIdsKey) return;
 
-    const myChatIds = new Set(chats.map(c => c.id));
+    const myChatIds = new Set(chatIdsKey.split(',').filter(Boolean));
 
-    // Only filter by read=false — no != operator avoids composite index requirement
     const q = query(
       collection(db, 'messages'),
       where('read', '==', false),
@@ -500,7 +500,6 @@ export default function ChatLayout({ children }) {
         const counts = {};
         snap.docs.forEach(d => {
           const data = d.data();
-          // Filter in JS: only other people's messages in MY chats
           if (
             data.chatId &&
             myChatIds.has(data.chatId) &&
@@ -517,11 +516,15 @@ export default function ChatLayout({ children }) {
     });
 
     return unsub;
-  }, [user?.uid, chats]); // eslint-disable-line
+  }, [user?.uid, chatIdsKey]); // eslint-disable-line
 
   return (
     <div className="flex h-screen bg-bg0 overflow-hidden">
-      <Sidebar chats={chats} loading={chatsLoading} indexError={indexError} user={user} profile={profile} logOut={logOut} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} unreadCounts={unreadCounts} onNavigate={(chatId) => router.push('/chat/' + chatId)} memberAvatarCache={memberAvatarCache} />
+      <Sidebar chats={chats} loading={chatsLoading} indexError={indexError} user={user} profile={profile} logOut={logOut} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} unreadCounts={unreadCounts} onNavigate={(chatId) => {
+        // Immediately clear badge for this chat — don't wait for Firestore propagation
+        setUnreadCounts(prev => ({ ...prev, [chatId]: 0 }));
+        router.push('/chat/' + chatId);
+      }} memberAvatarCache={memberAvatarCache} />
       <main className="flex-1 overflow-hidden flex flex-col">
         {/* Mobile header with hamburger */}
         <div className="lg:hidden flex items-center gap-3 px-4 py-3 bg-bg1 border-b border-border1 flex-shrink-0">

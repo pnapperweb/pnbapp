@@ -63,20 +63,24 @@ function ReactionEmoji({ emoji }) {
   return <span>{emoji}</span>;
 }
 
-function ReactionBar({ reactions = {}, myUid, onReact }) {
-  const entries = Object.entries(reactions).filter(([, u]) => u.length > 0);
+function ReactionBar({ reactions = {}, reactionsDisplay = {}, myUid, onReact }) {
+  const entries = Object.entries(reactions).filter(([, u]) => Array.isArray(u) && u.length > 0);
   if (!entries.length) return null;
   return (
     <div className="flex flex-wrap gap-1 mt-1">
-      {entries.map(([emoji, uids]) => (
-        <button key={emoji} onClick={() => onReact(emoji)}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition border
-            ${uids.includes(myUid)
-              ? 'bg-accent/20 border-accent/40 text-accentL'
-              : 'bg-surface2 border-border1 text-textS hover:bg-surface3'}`}>
-          <ReactionEmoji emoji={emoji} /> <span className="font-semibold">{uids.length}</span>
-        </button>
-      ))}
+      {entries.map(([key, uids]) => {
+        // Use reactionsDisplay for the visual emoji, fall back to key for legacy plain emojis
+        const displayEmoji = reactionsDisplay?.[key] || key;
+        return (
+          <button key={key} onClick={() => onReact(displayEmoji)}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition border
+              ${uids.includes(myUid)
+                ? 'bg-accent/20 border-accent/40 text-accentL'
+                : 'bg-surface2 border-border1 text-textS hover:bg-surface3'}`}>
+            <ReactionEmoji emoji={displayEmoji} /> <span className="font-semibold">{uids.length}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -153,7 +157,7 @@ function Bubble({ msg, isMe, myUid, onReact, onReply, myAvatar }) {
 
         {bubbleContent()}
 
-        <ReactionBar reactions={msg.reactions || {}} myUid={myUid} onReact={e => onReact(msg.id, e)} />
+        <ReactionBar reactions={msg.reactions || {}} reactionsDisplay={msg.reactionsDisplay || {}} myUid={myUid} onReact={e => onReact(msg.id, e)} />
 
         <div className={`flex items-center gap-1.5 mt-0.5 ${isMe ? 'flex-row-reverse' : ''}`}>
           <span className="text-textT text-[10px]">{time}</span>
@@ -297,13 +301,15 @@ export default function ChatPage({ params }) {
   const bottomRef        = useRef(null);
   const inputRef         = useRef(null);
   const fileInputRef     = useRef(null);
-  const prevCountRef     = useRef(0);
+  const prevCountRef     = useRef(0);   // for sound — updated in snapshot
+  const scrollCountRef   = useRef(0);   // for scroll — updated AFTER scroll effect runs
   const initialScrollRef = useRef(false); // has first-load scroll happened?
 
   // Reset scroll flag when chat changes
   useEffect(() => {
     initialScrollRef.current = false;
     prevCountRef.current = 0;
+    scrollCountRef.current = 0;
   }, [id]);
 
   // Load chat metadata
@@ -341,17 +347,17 @@ export default function ChatPage({ params }) {
       setMessages(msgs);
       setLoading(false);
 
-      // Mark unread incoming messages as read
+      // Mark unread incoming messages as read (filter in JS — no != index needed)
       if (user?.uid) {
         getDocs(query(
           collection(db, 'messages'),
-          where('chatId',   '==', id),
-          where('read',     '==', false),
-          where('senderId', '!=', user.uid),
+          where('chatId', '==', id),
+          where('read',   '==', false),
         )).then(unreadSnap => {
-          if (unreadSnap.empty) return;
+          const toMark = unreadSnap.docs.filter(d => d.data().senderId !== user.uid);
+          if (toMark.length === 0) return;
           const batch = writeBatch(db);
-          unreadSnap.docs.forEach(d => batch.update(d.ref, { read: true }));
+          toMark.forEach(d => batch.update(d.ref, { read: true }));
           batch.commit().catch(() => {});
         }).catch(() => {});
       }
@@ -381,20 +387,19 @@ export default function ChatPage({ params }) {
   }, [messages.length]); // eslint-disable-line
 
   // ── Scroll to bottom ──────────────────────────────────────────────────────
-  // On first load: instant scroll (no animation, avoids the "flash mid-screen" bug)
-  // On new message: smooth scroll
   useEffect(() => {
     if (messages.length === 0) return;
     const el = bottomRef.current;
     if (!el) return;
     if (!initialScrollRef.current) {
-      // First render — jump instantly so user never sees mid-scroll
+      // First load — jump instantly, never show mid-scroll flash
       el.scrollIntoView({ behavior: 'instant' });
       initialScrollRef.current = true;
-    } else if (messages.length > prevCountRef.current) {
-      // New message arrived — smooth scroll
+    } else if (messages.length > scrollCountRef.current) {
+      // New message — smooth scroll
       el.scrollIntoView({ behavior: 'smooth' });
     }
+    scrollCountRef.current = messages.length;
   }, [messages]);
 
   // ── EI suggestions — only for @paulnapper ─────────────────────────────
@@ -552,11 +557,33 @@ Respond ONLY with a JSON array of 3 strings, no explanation. Example: ["That mea
     const msgRef  = doc(db, 'messages', messageId);
     const msgSnap = await getDoc(msgRef);
     if (!msgSnap.exists()) return;
-    const existing = msgSnap.data().reactions?.[emoji] || [];
+
+    // Firestore field names can't contain '.' or '/' — present in base64 image tokens.
+    // Use a safe key: for image emojis use the name part, for regular emoji use the emoji itself
+    // but replace any unsafe chars with underscores.
+    const isImageEmoji = typeof emoji === 'string' && emoji.startsWith('[emoji:');
+    let safeKey;
+    if (isImageEmoji) {
+      // Extract just the name: [emoji:shy-face:data:...] -> 'img_shy-face'
+      const namePart = emoji.match(/^\[emoji:([^:]+):/)?.[1] || 'custom';
+      safeKey = 'img_' + namePart.replace(/[^a-zA-Z0-9_-]/g, '_');
+    } else {
+      // Regular emoji — encode to safe key using codepoints
+      safeKey = 'e_' + [...emoji].map(c => c.codePointAt(0).toString(16)).join('_');
+    }
+
+    const data = msgSnap.data();
+    const existing = data.reactions?.[safeKey] || [];
     const already  = existing.includes(user.uid);
-    await updateDoc(msgRef, {
-      [`reactions.${emoji}`]: already ? arrayRemove(user.uid) : arrayUnion(user.uid),
-    });
+
+    const updates = {
+      [`reactions.${safeKey}`]: already ? arrayRemove(user.uid) : arrayUnion(user.uid),
+    };
+    // Store the display emoji alongside so we can render it
+    if (!already) {
+      updates[`reactionsDisplay.${safeKey}`] = emoji;
+    }
+    await updateDoc(msgRef, updates);
   }, [user]);
 
   function insertEmoji(emoji) {
